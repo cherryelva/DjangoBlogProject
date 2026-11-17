@@ -4,7 +4,8 @@ from abc import abstractmethod
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
+from django.db.models import F
 from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -14,7 +15,6 @@ from uuslug import slugify
 from djangoblog.utils import cache_decorator, cache
 from djangoblog.utils import get_current_site
 from djangoblog.constants import CacheTimeout, CacheKey
-
 logger = logging.getLogger(__name__)
 
 
@@ -105,6 +105,30 @@ class Article(BaseModel):
         blank=False,
         null=False)
     tags = models.ManyToManyField('Tag', verbose_name=_('tag'), blank=True)
+    like_count = models.PositiveIntegerField(default=0, verbose_name="点赞数")
+    liked_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="liked_articles",
+        verbose_name="点赞用户",
+    )
+
+    def toggle_like(self, user):
+        """Toggle one authenticated reader's like and keep its count consistent."""
+        if not user.is_authenticated or not user.pk:
+            raise ValueError('An authenticated user is required to like an article.')
+        with transaction.atomic():
+            # Take a write lock before reading, including on SQLite where
+            # select_for_update() is a no-op. Do not trigger article save hooks.
+            Article.objects.filter(pk=self.pk).update(like_count=F('like_count'))
+            liked = self.liked_users.filter(pk=user.pk).exists()
+            if liked:
+                self.liked_users.remove(user)
+            else:
+                self.liked_users.add(user)
+            self.like_count = self.liked_users.count()
+            Article.objects.filter(pk=self.pk).update(like_count=self.like_count)
+        return not liked
 
     def body_to_string(self):
         return self.body

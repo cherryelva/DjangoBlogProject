@@ -2,14 +2,16 @@ import logging
 import os
 import uuid
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.templatetags.static import static
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.views.generic.detail import DetailView
 from django.views.generic.list import ListView
 from haystack.views import SearchView
@@ -143,6 +145,10 @@ class ArticleDetailView(DetailView):
         context['seo_title'] = f"{article.title} | {blog_setting.site_name}"
         context['seo_description'] = description
         context['seo_keywords'] = keywords
+        context['has_liked'] = (
+            self.request.user.is_authenticated
+            and article.liked_users.filter(pk=self.request.user.pk).exists()
+        )
         
         # 触发文章详情加载钩子，让插件可以添加额外的上下文数据
         from djangoblog.plugin_manage.hook_constants import ARTICLE_DETAIL_LOAD
@@ -342,3 +348,13 @@ from djangoblog.error_views import (
 def clean_cache_view(request):
     cache.clear()
     return HttpResponse('ok')
+@require_POST
+@login_required(login_url='accounts:login')
+def like_post(request, article_id):
+    article = get_object_or_404(Article, id=article_id, status='p')
+    article.toggle_like(request.user)
+    return redirect(article.get_absolute_url())
+
+
+
+

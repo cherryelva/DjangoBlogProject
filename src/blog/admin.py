@@ -50,6 +50,7 @@ class ArticlelAdmin(admin.ModelAdmin):
         'link_to_category',
         'creation_time',
         'views',
+        'like_count',
         'status',
         'type',
         'article_order')
@@ -57,6 +58,7 @@ class ArticlelAdmin(admin.ModelAdmin):
     list_filter = ('status', 'type', 'category')
     date_hierarchy = 'creation_time'
     filter_horizontal = ('tags',)
+    readonly_fields = ('like_count', 'liked_users')
     exclude = ('creation_time', 'last_modify_time')
     view_on_site = True
     actions = [

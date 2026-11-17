@@ -59,4 +59,7 @@ urlpatterns = [
         r'clean',
         views.clean_cache_view,
         name='clean'),
+    path('like/<int:article_id>/',
+         views.like_post, name='like-article'),
 ]
+
