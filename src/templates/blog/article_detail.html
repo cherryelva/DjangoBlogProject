@@ -30,6 +30,23 @@
                         <h1 class="mb-4 text-2xl font-bold leading-tight tracking-tight text-foreground md:text-3xl">
                             {{ article.title }}
                         </h1>
+                        <div class="mb-4 flex items-center gap-3 text-xs text-muted-foreground">
+                            <span aria-live="polite">点赞：{{ article.like_count }}</span>
+                            {% if user.is_authenticated %}
+                                <form action="{% url 'blog:like-article' article.id %}" method="post"
+                                      onsubmit="this.querySelector('button').disabled = true;">
+                                    {% csrf_token %}
+                                    <button type="submit" aria-pressed="{{ has_liked|yesno:'true,false' }}"
+                                            class="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50">
+                                        {% if has_liked %}👍 已点赞 · 取消点赞{% else %}👍 点赞{% endif %}
+                                    </button>
+                                </form>
+                            {% else %}
+                                <a href="{% url 'accounts:login' %}?next={{ article.get_absolute_url|urlencode }}"
+                                   class="font-medium text-primary hover:underline">登录后点赞</a>
+                            {% endif %}
+                        </div>
+
 
                         {# Meta #}
                         <div class="mb-6 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
