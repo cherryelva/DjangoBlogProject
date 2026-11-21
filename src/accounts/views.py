@@ -224,3 +224,4 @@ class ForgetPasswordEmailCode(View):
         utils.set_code(to_email, code)
 
         return HttpResponse("ok")
+
