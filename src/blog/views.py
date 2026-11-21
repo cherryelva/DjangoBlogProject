@@ -1,4 +1,4 @@
-#LY: 模块功能：博客系统的核心视图层(View)，负责处理首页、文章详情（含 AI 智能导读创新功能）、分类目录、作者归档、标签列表、全文搜索及图床上传的 HTTP 请求，并将数据传递给前端模板。
+#LY: 模块功能：博客系统的核心视图层(View)，负责处理首页、文章详情（含 AI 智能导读创新功能与点赞交互）、分类目录、作者归档、标签列表、全文搜索及图床上传的 HTTP 请求，并将数据传递给前端模板。
 
 import json
 import logging
@@ -9,15 +9,17 @@ import urllib.request
 import uuid
 
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseForbidden
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.utils.text import Truncator
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.views.generic.detail import DetailView
 from django.views.generic.list import ListView
 from haystack.views import SearchView
@@ -41,6 +43,7 @@ logger = logging.getLogger(__name__)
 def generate_ai_summary(article):
     #LY: 函数级注释（创新点）：为指定文章生成 AI 智能导读摘要。优先读取缓存；若环境变量配置了大模型 API Key 则调用 LLM 生成导读；未配置密钥或网络异常时自动降级为本地关键句提取算法，确保高可用性。
     modify_ts = int(article.last_modify_time.timestamp()) if article.last_modify_time else 0
+    #1
     cache_key = f'ai_summary_{article.id}_{modify_ts}'
     cached_summary = cache.get(cache_key)
     if cached_summary:
@@ -73,7 +76,7 @@ def generate_ai_summary(article):
                 "max_tokens": 200,
                 "temperature": 0.5
             }).encode('utf-8')
-
+#2
             req = urllib.request.Request(
                 api_base,
                 data=payload,
@@ -89,7 +92,7 @@ def generate_ai_summary(article):
         except (urllib.error.URLError, KeyError, IndexError, ValueError, TimeoutError) as exc:
             logger.warning("AI 摘要 API 调用失败，已自动切换至本地提取模式: %s", exc)
 
-    #LY: 核心代码块：本地降级兜底算法。按句号/感叹号/问号切分长句，提取首尾核心句组成结构化导读。
+ #   #LY: 核心代码块：本地降级兜底算法。按句号/感叹号/问号切分长句，提取首尾核心句组成结构化导读。
     if not summary_result:
         sentences = [s.strip() for s in re.split(r'[。！？.!?]', plain_text) if len(s.strip()) > 10]
         if len(sentences) >= 3:
@@ -197,7 +200,7 @@ class ArticleDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         article = self.object
 
-        #LY: 核心代码块：将 Markdown 正文转为纯文本并截取前 150 个字符，自动生成页面 meta description。
+  #2      #LY: 核心代码块：将 Markdown 正文转为纯文本并截取前 150 个字符，自动生成页面 meta description。
         html_content = CommonMarkdown.get_markdown(article.body)
         description = ' '.join(strip_tags(html_content).split())
         description = Truncator(description).chars(150, truncate='...')
@@ -208,6 +211,15 @@ class ArticleDetailView(DetailView):
         context['seo_title'] = f"{article.title} | {blog_setting.site_name}"
         context['seo_description'] = description
         context['seo_keywords'] = keywords
+
+        #LY: 核心代码块：判断当前登录用户是否已点赞该文章，供详情页渲染点赞状态。
+        user = self.request.user
+        if user.is_authenticated and hasattr(article, 'is_liked_by'):
+            context['has_liked'] = article.is_liked_by(user)
+        elif user.is_authenticated and hasattr(article, 'likes'):
+            context['has_liked'] = article.likes.filter(pk=user.pk).exists()
+        else:
+            context['has_liked'] = False
 
         #LY: 核心代码块（创新点）：调用智能导读生成函数，将 AI 摘要注入文章详情页模板上下文。
         context['ai_summary'] = generate_ai_summary(article)
@@ -423,3 +435,12 @@ def clean_cache_view(request):
     #LY: 函数级注释：手动清理系统全局缓存的辅助视图接口。
     cache.clear()
     return HttpResponse('ok')
+
+
+@require_POST
+@login_required(login_url='accounts:login')
+def like_post(request, article_id):
+    #LY: 函数级注释：处理已登录用户的文章点赞与取消点赞 POST 请求，切换点赞状态后重定向回文章详情页。
+    article = get_object_or_404(Article, id=article_id, status='p')
+    article.toggle_like(request.user)
+    return redirect(article.get_absolute_url())
