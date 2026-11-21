@@ -79,6 +79,21 @@
 
                         <div class="mb-6 h-px bg-border/60"></div>
 
+                        {# LY: 创新点前端展示组件 - AI 文章智能导读卡片 #}
+                        {% if ai_summary %}
+                            <div class="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 md:p-5">
+                                <div class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary">
+                                    <svg class="size-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                    </svg>
+                                    <span>AI 智能导读</span>
+                                </div>
+                                <p class="m-0 text-sm leading-relaxed text-foreground/90">
+                                    {{ ai_summary }}
+                                </p>
+                            </div>
+                        {% endif %}
+
                         {# Content #}
                         <div class="entry-content max-w-full" itemprop="articleBody">
                             {% if article.show_toc %}
@@ -213,4 +228,3 @@
         </div>
     </div>
 {% endblock %}
-

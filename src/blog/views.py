@@ -1,7 +1,11 @@
-#LY: 模块功能：博客系统的核心视图层(View)，负责处理首页、文章详情、分类目录、作者归档、标签列表、全文搜索及图床上传的 HTTP 请求，并将数据传递给前端模板。
+#LY: 模块功能：博客系统的核心视图层(View)，负责处理首页、文章详情（含 AI 智能导读创新功能）、分类目录、作者归档、标签列表、全文搜索及图床上传的 HTTP 请求，并将数据传递给前端模板。
 
+import json
 import logging
 import os
+import re
+import urllib.error
+import urllib.request
 import uuid
 
 from django.conf import settings
@@ -10,6 +14,8 @@ from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
 from django.templatetags.static import static
 from django.utils import timezone
+from django.utils.html import strip_tags
+from django.utils.text import Truncator
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic.detail import DetailView
@@ -18,18 +24,83 @@ from haystack.views import SearchView
 
 from blog.models import Article, Category, LinkShowType, Links, Tag
 from comments.forms import CommentForm
+from djangoblog.mixins import (
+    ArticleListMixin,
+    CachedListViewMixin,
+    OptimizedArticleQueryMixin,
+    PageNumberMixin,
+    SlugCachedMixin,
+)
 from djangoblog.plugin_manage import hooks
 from djangoblog.plugin_manage.hook_constants import ARTICLE_CONTENT_HOOK_NAME
-from djangoblog.utils import cache, get_blog_setting, get_sha256
-from djangoblog.mixins import (
-    SlugCachedMixin,
-    ArticleListMixin,
-    OptimizedArticleQueryMixin,
-    CachedListViewMixin,
-    PageNumberMixin
-)
+from djangoblog.utils import CommonMarkdown, cache, get_blog_setting, get_sha256
 
 logger = logging.getLogger(__name__)
+
+
+def generate_ai_summary(article):
+    #LY: 函数级注释（创新点）：为指定文章生成 AI 智能导读摘要。优先读取缓存；若环境变量配置了大模型 API Key 则调用 LLM 生成导读；未配置密钥或网络异常时自动降级为本地关键句提取算法，确保高可用性。
+    modify_ts = int(article.last_modify_time.timestamp()) if article.last_modify_time else 0
+    cache_key = f'ai_summary_{article.id}_{modify_ts}'
+    cached_summary = cache.get(cache_key)
+    if cached_summary:
+        return cached_summary
+
+    #LY: 核心代码块：清洗 Markdown 标签提取纯文本正文，并截取前 1500 字作为模型输入以控制 Token 消耗。
+    plain_text = ' '.join(strip_tags(CommonMarkdown.get_markdown(article.body)).split())
+    if not plain_text:
+        return "暂无文章正文内容，无法生成智能导读。"
+
+    api_key = os.environ.get('AI_SUMMARY_API_KEY', '')
+    api_base = os.environ.get('AI_SUMMARY_API_BASE', 'https://api.deepseek.com/v1/chat/completions')
+    model_name = os.environ.get('AI_SUMMARY_MODEL', 'deepseek-chat')
+
+    summary_result = ""
+
+    #LY: 核心代码块：若环境变量配置了大模型 API Key，则通过标准 HTTP 请求调用 LLM 生成结构化导读。
+    if api_key:
+        try:
+            prompt = (
+                f"请用简洁清晰的中文为以下博客文章生成一段120字以内的核心导读摘要，提炼文章主旨与关键技术点：\n"
+                f"标题：{article.title}\n正文：{plain_text[:1500]}"
+            )
+            payload = json.dumps({
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": "你是一个专业的技术博客智能导读助手。"},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 200,
+                "temperature": 0.5
+            }).encode('utf-8')
+
+            req = urllib.request.Request(
+                api_base,
+                data=payload,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {api_key}'
+                },
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                res_data = json.loads(resp.read().decode('utf-8'))
+                summary_result = res_data['choices'][0]['message']['content'].strip()
+        except (urllib.error.URLError, KeyError, IndexError, ValueError, TimeoutError) as exc:
+            logger.warning("AI 摘要 API 调用失败，已自动切换至本地提取模式: %s", exc)
+
+    #LY: 核心代码块：本地降级兜底算法。按句号/感叹号/问号切分长句，提取首尾核心句组成结构化导读。
+    if not summary_result:
+        sentences = [s.strip() for s in re.split(r'[。！？.!?]', plain_text) if len(s.strip()) > 10]
+        if len(sentences) >= 3:
+            summary_result = f"【核心要点】{sentences[0]}。{sentences[1]}。此外，文中还探讨了{sentences[-1]}。"
+        elif sentences:
+            summary_result = "。".join(sentences) + "。"
+        else:
+            summary_result = Truncator(plain_text).chars(120, truncate='...')
+
+    cache.set(cache_key, summary_result, 60 * 60 * 24)
+    return summary_result
 
 
 class ArticleListView(CachedListViewMixin, PageNumberMixin, ListView):
@@ -73,7 +144,7 @@ class IndexView(OptimizedArticleQueryMixin, ArticleListView):
 
 
 class ArticleDetailView(DetailView):
-    #LY: 类级注释：文章详情页面视图，核心业务视图之一，负责正文渲染、树形评论分页加载、上下篇导航及单页 SEO 描述自动生成。
+    #LY: 类级注释：文章详情页面视图，核心业务视图之一，负责正文渲染、AI 智能导读生成、树形评论分页加载、上下篇导航及单页 SEO 描述自动生成。
     template_name = 'blog/article_detail.html'
     model = Article
     pk_url_kwarg = 'article_id'
@@ -126,10 +197,6 @@ class ArticleDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         article = self.object
 
-        from django.utils.html import strip_tags
-        from django.utils.text import Truncator
-        from djangoblog.utils import CommonMarkdown
-
         #LY: 核心代码块：将 Markdown 正文转为纯文本并截取前 150 个字符，自动生成页面 meta description。
         html_content = CommonMarkdown.get_markdown(article.body)
         description = ' '.join(strip_tags(html_content).split())
@@ -141,6 +208,9 @@ class ArticleDetailView(DetailView):
         context['seo_title'] = f"{article.title} | {blog_setting.site_name}"
         context['seo_description'] = description
         context['seo_keywords'] = keywords
+
+        #LY: 核心代码块（创新点）：调用智能导读生成函数，将 AI 摘要注入文章详情页模板上下文。
+        context['ai_summary'] = generate_ai_summary(article)
 
         #LY: 核心代码块：触发插件钩子，允许外部扩展向文章详情页上下文动态注入额外数据。
         from djangoblog.plugin_manage.hook_constants import ARTICLE_DETAIL_LOAD
