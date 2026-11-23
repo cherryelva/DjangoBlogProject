@@ -130,6 +130,9 @@
 
         {# Right: theme toggle + mobile menu #}
         <div class="ml-auto flex items-center gap-0.5 lg:ml-0">
+            <a href="{% url 'blog:favorite-list' %}" hx-boost="false"
+               class="rounded-lg px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-secondary"
+               {% if nav_active == 'favorites' %}aria-current="page"{% endif %}>我的收藏夹</a>
             {# Theme toggle #}
             <button class="size-9 rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                     @click="window.themeManager && window.themeManager.toggle()"

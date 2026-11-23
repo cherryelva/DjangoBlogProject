@@ -15,7 +15,7 @@ from django.views.generic.detail import DetailView
 from django.views.generic.list import ListView
 from haystack.views import SearchView
 
-from blog.models import Article, Category, LinkShowType, Links, Tag
+from blog.models import Article, ArticleFavorite, Category, LinkShowType, Links, Tag
 from comments.forms import CommentForm
 from djangoblog.plugin_manage import hooks
 from djangoblog.plugin_manage.hook_constants import ARTICLE_CONTENT_HOOK_NAME
@@ -164,6 +164,11 @@ class ArticleDetailView(DetailView):
         context['seo_title'] = f"{article.title} | {blog_setting.site_name}"
         context['seo_description'] = description
         context['seo_keywords'] = keywords
+        context['has_favorited'] = (
+            self.request.user.is_authenticated
+            and ArticleFavorite.objects.filter(
+                user=self.request.user, article=article).exists()
+        )
         
         # 触发文章详情加载钩子，让插件可以添加额外的上下文数据
         from djangoblog.plugin_manage.hook_constants import ARTICLE_DETAIL_LOAD

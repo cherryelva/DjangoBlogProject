@@ -1,0 +1,56 @@
+{% extends 'share_layout/base.html' %}
+
+{% block header %}
+    <title>我的收藏夹 | {{ SITE_NAME }}</title>
+{% endblock %}
+
+{% block content %}
+<main class="mx-auto max-w-6xl px-4 py-4 lg:px-6 lg:py-6">
+    <div class="mb-6">
+        <h1 class="mb-2 text-2xl font-bold text-foreground">我的收藏夹</h1>
+        <p class="text-sm text-muted-foreground">共 {{ favorite_count }} 篇文章，按收藏时间从新到旧排列。收藏仅自己可见。</p>
+    </div>
+
+    <div class="flex flex-col gap-5">
+        {% for favorite in page_obj %}
+            <article class="rounded-xl border border-border bg-card p-6 shadow-sm">
+                <h2 class="mb-2 text-xl font-bold text-foreground">
+                    <a href="{{ favorite.article.get_absolute_url }}" class="hover:text-primary">{{ favorite.article.title }}</a>
+                </h2>
+                <p class="mb-4 text-sm text-muted-foreground">
+                    {{ favorite.article.author.nickname|default:favorite.article.author.username }} · {{ favorite.article.category.name }}
+                    · 收藏于 {{ favorite.created_at|date:'Y-m-d H:i' }}
+                </p>
+                <div class="flex flex-wrap items-center gap-3 text-sm">
+                    <a href="{{ favorite.article.get_absolute_url }}" class="font-medium text-primary hover:underline">阅读文章</a>
+                    <form action="{% url 'blog:favorite-remove' favorite.article_id %}" method="post" hx-boost="false"
+                          onsubmit="this.querySelector('button').disabled = true;">
+                        {% csrf_token %}
+                        <input type="hidden" name="return_to" value="favorites">
+                        <input type="hidden" name="page" value="{{ page_obj.number }}">
+                        <button type="submit" aria-label="取消收藏：{{ favorite.article.title }}"
+                                class="rounded-full border border-border px-3 py-1.5 text-primary transition-colors hover:bg-primary/10 disabled:opacity-50">取消收藏</button>
+                    </form>
+                </div>
+            </article>
+        {% empty %}
+            <div class="rounded-xl border border-border bg-card p-6 text-center">
+                <p class="mb-4 text-muted-foreground">还没有收藏文章，去发现喜欢的内容吧。</p>
+                <a href="{% url 'blog:index' %}" class="font-medium text-primary hover:underline">去浏览文章</a>
+            </div>
+        {% endfor %}
+    </div>
+
+    {% if page_obj.has_other_pages %}
+        <nav aria-label="收藏夹分页" class="mt-8 flex flex-wrap items-center justify-center gap-4 text-sm">
+            {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}" class="text-primary hover:underline">上一页</a>
+            {% endif %}
+            <span class="text-muted-foreground">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}" class="text-primary hover:underline">下一页</a>
+            {% endif %}
+        </nav>
+    {% endif %}
+</main>
+{% endblock %}

@@ -2,9 +2,15 @@ from django.urls import path
 from django.views.decorators.cache import cache_page
 
 from . import views
+from . import favorite_views
 
 app_name = "blog"
 urlpatterns = [
+    path('favorites/', favorite_views.favorite_list, name='favorite-list'),
+    path('article/<int:article_id>/favorite/',
+         favorite_views.favorite_add, name='favorite-add'),
+    path('article/<int:article_id>/unfavorite/',
+         favorite_views.favorite_remove, name='favorite-remove'),
     # 网站首页：匹配根路径，将请求交给 IndexView 视图处理
     path(
         r'',
