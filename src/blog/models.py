@@ -241,6 +241,31 @@ class Article(BaseModel):
         return ""
 
 
+class ArticleFavorite(models.Model):
+    """A reader's private saved article; one record per reader and article."""
+
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='article_favorites', verbose_name='收藏用户')
+    article = models.ForeignKey(
+        Article, on_delete=models.CASCADE,
+        related_name='favorites', verbose_name='收藏文章')
+    created_at = models.DateTimeField('收藏时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '文章收藏'
+        verbose_name_plural = verbose_name
+        ordering = ['-created_at', '-pk']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'article'], name='unique_user_article_favorite'),
+        ]
+
+    def __str__(self):
+        return f'{self.user_id} - {self.article_id}'
+
+
 # ==========================================
 # 业务模型：文章分类 (Category)
 # 作用：支持多级分类目录结构。

@@ -49,6 +49,25 @@
 
 
                         {# Meta #}
+                        {% if article.status == 'p' and article.type == 'a' %}
+                            <div class="mb-6 flex flex-wrap items-center gap-3 text-sm" id="article-favorite">
+                                {% if user.is_authenticated %}
+                                    <form action="{% if has_favorited %}{% url 'blog:favorite-remove' article.id %}{% else %}{% url 'blog:favorite-add' article.id %}{% endif %}"
+                                          method="post" hx-boost="false"
+                                          onsubmit="this.querySelector('button').disabled = true;">
+                                        {% csrf_token %}
+                                        <button type="submit" aria-pressed="{{ has_favorited|yesno:'true,false' }}"
+                                                class="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50">
+                                            {% if has_favorited %}★ 已收藏 · 取消收藏{% else %}☆ 收藏文章{% endif %}
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <a href="{% url 'accounts:login' %}?next={{ article.get_absolute_url|urlencode }}"
+                                       class="font-medium text-primary hover:underline" hx-boost="false">登录后收藏</a>
+                                {% endif %}
+                                <a href="{% url 'blog:favorite-list' %}" class="text-primary hover:underline" hx-boost="false">我的收藏夹</a>
+                            </div>
+                        {% endif %}
                         <div class="mb-6 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                             <a href="{{ article.category.get_absolute_url }}"
                                class="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 font-medium text-primary transition-colors hover:bg-primary/20">

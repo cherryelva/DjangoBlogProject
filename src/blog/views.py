@@ -24,7 +24,7 @@ from django.views.generic.detail import DetailView
 from django.views.generic.list import ListView
 from haystack.views import SearchView
 
-from blog.models import Article, Category, LinkShowType, Links, Tag
+from blog.models import Article, ArticleFavorite, Category, LinkShowType, Links, Tag
 from comments.forms import CommentForm
 from djangoblog.mixins import (
     ArticleListMixin,
@@ -213,13 +213,15 @@ class ArticleDetailView(DetailView):
         context['seo_keywords'] = keywords
 
         #LY: 核心代码块：判断当前登录用户是否已点赞该文章，供详情页渲染点赞状态。
-        user = self.request.user
-        if user.is_authenticated and hasattr(article, 'is_liked_by'):
-            context['has_liked'] = article.is_liked_by(user)
-        elif user.is_authenticated and hasattr(article, 'likes'):
-            context['has_liked'] = article.likes.filter(pk=user.pk).exists()
-        else:
-            context['has_liked'] = False
+        context['has_liked'] = (
+            self.request.user.is_authenticated
+            and article.liked_users.filter(pk=self.request.user.pk).exists()
+        )
+        context['has_favorited'] = (
+            self.request.user.is_authenticated
+            and ArticleFavorite.objects.filter(
+                user=self.request.user, article=article).exists()
+        )
 
         #LY: 核心代码块（创新点）：调用智能导读生成函数，将 AI 摘要注入文章详情页模板上下文。
         context['ai_summary'] = generate_ai_summary(article)
